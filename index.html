@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Weighted Matrix Chart Tool</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background-color: #f7f7f7;
+    }
+    .hidden {
+      display: none;
+    }
+    .welcome, .editor {
+      margin-bottom: 20px;
+      background: #fff;
+      padding: 15px;
+      border-radius: 5px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    label {
+      display: block;
+      margin-bottom: 10px;
+    }
+    input[type="text"] {
+      width: 300px;
+      padding: 5px;
+      font-size: 14px;
+    }
+    input[type="number"] {
+      width: 60px;
+      padding: 3px;
+      font-size: 14px;
+      margin-top: 5px;
+    }
+    button {
+      padding: 8px 12px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    table {
+      border-collapse: collapse;
+      margin-top: 20px;
+      width: 100%;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: center;
+    }
+    th {
+      background-color: #eaeaea;
+    }
+    .heatmap {
+      transition: background-color 0.3s ease;
+    }
+  </style>
+</head>
+<body>
+  <!-- Welcome Screen -->
+  <div id="welcomeScreen" class="welcome">
+    <h1>Welcome to the Weighted Matrix Chart Tool</h1>
+    <label>
+      Title:
+      <input type="text" id="chartTitle" value="Weighted Matrix">
+    </label>
+    <label>
+      Primary Conditions (comma separated):
+      <input type="text" id="primaryConditions" value="P1, P2, P3">
+    </label>
+    <label>
+      Secondary Conditions (comma separated):
+      <input type="text" id="secondaryConditions" value="S1, S2, S3, S4">
+    </label>
+    <button id="createChartBtn">Create</button>
+  </div>
+
+  <!-- Editor Screen -->
+  <div id="editor" class="editor hidden">
+    <h1 id="matrixTitle"></h1>
+    <div id="matrixContainer"></div>
+  </div>
+
+  <script>
+    // When the "Create" button is clicked...
+    document.getElementById("createChartBtn").addEventListener("click", function(){
+      // Read user inputs
+      const title = document.getElementById("chartTitle").value;
+      const primaryStr = document.getElementById("primaryConditions").value;
+      const secondaryStr = document.getElementById("secondaryConditions").value;
+      const primaries = primaryStr.split(",").map(s => s.trim()).filter(s => s);
+      const secondaries = secondaryStr.split(",").map(s => s.trim()).filter(s => s);
+
+      // Set the editor title
+      document.getElementById("matrixTitle").innerText = title;
+
+      // Create the table
+      const table = document.createElement("table");
+      // Header row with secondary condition names
+      const headerRow = document.createElement("tr");
+      const emptyHeader = document.createElement("th");
+      emptyHeader.innerText = "";
+      headerRow.appendChild(emptyHeader);
+      secondaries.forEach(sec => {
+        const th = document.createElement("th");
+        th.innerText = sec;
+        headerRow.appendChild(th);
+      });
+      table.appendChild(headerRow);
+
+      // Create rows for each primary condition
+      primaries.forEach((primary, rowIndex) => {
+        const tr = document.createElement("tr");
+
+        // First cell: primary name and weight input
+        const tdPrimary = document.createElement("td");
+        const nameDiv = document.createElement("div");
+        nameDiv.innerText = primary;
+        const weightInput = document.createElement("input");
+        weightInput.type = "number";
+        weightInput.value = 1;
+        weightInput.min = -100;
+        weightInput.max = 100;
+        weightInput.step = 1;
+        weightInput.classList.add("weightInput");
+        // Update the row whenever the weight changes
+        weightInput.addEventListener("input", updateAllCells);
+        tdPrimary.appendChild(nameDiv);
+        tdPrimary.appendChild(weightInput);
+        tr.appendChild(tdPrimary);
+
+        // Create a cell for each secondary condition
+        secondaries.forEach((sec, colIndex) => {
+          const td = document.createElement("td");
+          const ratingInput = document.createElement("input");
+          ratingInput.type = "number";
+          ratingInput.value = 0;
+          ratingInput.classList.add("ratingInput", "heatmap");
+          // Associate the rating with its row (for weight lookup)
+          ratingInput.dataset.rowIndex = rowIndex;
+          // Update the computed value when changed
+          ratingInput.addEventListener("input", updateAllCells);
+          td.appendChild(ratingInput);
+          tr.appendChild(td);
+        });
+
+        table.appendChild(tr);
+      });
+
+      // Insert the table into the editor
+      const container = document.getElementById("matrixContainer");
+      container.innerHTML = "";
+      container.appendChild(table);
+
+      // Show the editor and hide the welcome screen
+      document.getElementById("welcomeScreen").classList.add("hidden");
+      document.getElementById("editor").classList.remove("hidden");
+
+      // Do an initial update of cell heatmapping
+      updateAllCells();
+    });
+
+    // Update all matrix cells based on current weights and ratings
+    function updateAllCells() {
+      const table = document.querySelector("#matrixContainer table");
+      if (!table) return;
+      // Loop over each row (skipping header row)
+      const rows = table.querySelectorAll("tr");
+      rows.forEach((row, rowIndex) => {
+        if (rowIndex === 0) return; // skip header
+        const weightInput = row.cells[0].querySelector("input.weightInput");
+        const weight = parseFloat(weightInput.value) || 0;
+        // Process each cell (skip first cell which is the label/weight)
+        for (let i = 1; i < row.cells.length; i++) {
+          const ratingInput = row.cells[i].querySelector("input.ratingInput");
+          const rating = parseFloat(ratingInput.value) || 0;
+          const product = weight * rating;
+          // Set a tooltip showing the computed value
+          ratingInput.title = "Computed: " + product;
+          // Apply heatmapping: green for positive, red for negative, white for zero.
+          if (product > 0) {
+            ratingInput.style.backgroundColor = "#b6fcb6"; // light green
+          } else if (product < 0) {
+            ratingInput.style.backgroundColor = "#fcb6b6"; // light red
+          } else {
+            ratingInput.style.backgroundColor = "#ffffff"; // white
+          }
+        }
+      });
+    }
+  </script>
+</body>
+</html>
