@@ -4,13 +4,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Weighted Matrix Tool</title>
+    <title>LiveDM</title>
     <style>
         body {
             background-color: #1a1a1a;
             color: #f0f0f0;
             font-family: Arial, sans-serif;
             margin: 20px;
+            user-select: none;
+            /* Prevent text selection */
         }
 
         .hidden {
@@ -50,7 +52,7 @@
 
         .scale-gradient {
             height: 20px;
-            background: linear-gradient(to right, #8b0000, #333, #006400);
+            background: linear-gradient(to right, #8b0000, #006400);
         }
 
         .scale-labels {
@@ -74,11 +76,134 @@
             padding: 8px;
             box-sizing: border-box;
             color: #f0f0f0;
+            cursor: pointer;
         }
 
-        .primary-weight,
+        .primary-weight {
+            cursor: pointer;
+            display: block;
+            width: 100%;
+            height: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+
         .secondary-weight {
             cursor: pointer;
+        }
+
+        /* Markdown preview styles */
+        .markdown-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .markdown-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+
+        #markdown-preview,
+        #rendered-preview {
+            background-color: #2a2a2a;
+            border: 1px solid #444;
+            padding: 15px;
+            border-radius: 5px;
+            max-width: 100%;
+            overflow-x: auto;
+        }
+
+        #markdown-preview {
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+
+        #rendered-preview {
+            line-height: 1.5;
+        }
+
+        #rendered-preview table {
+            width: 100%;
+            margin-bottom: 15px;
+        }
+
+        #rendered-preview th {
+            background-color: #333;
+            font-weight: bold;
+        }
+
+        #rendered-preview h1 {
+            border-bottom: 1px solid #444;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+
+        /* Bar chart styles */
+        .bar-chart-container {
+            margin-top: 30px;
+            padding: 15px;
+            background-color: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 5px;
+        }
+
+        .bar-chart-title {
+            margin-top: 0;
+            margin-bottom: 15px;
+            font-size: 18px;
+            border-bottom: 1px solid #444;
+            padding-bottom: 10px;
+        }
+
+        .bar {
+            height: 25px;
+            margin-bottom: 8px;
+            background-color: #444;
+            position: relative;
+            transition: width 0.5s ease;
+            border-radius: 3px;
+        }
+
+        .bar-label {
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            white-space: nowrap;
+            z-index: 1;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
+        }
+
+        .bar-value {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            white-space: nowrap;
+            z-index: 1;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
+        }
+
+        .copy-btn {
+            background-color: #555;
+            border: none;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .copy-btn:hover {
+            background-color: #666;
+        }
+
+        .copy-success {
+            background-color: #006400;
         }
     </style>
 </head>
@@ -86,9 +211,9 @@
 <body>
     <!-- Welcome Screen -->
     <div id="welcome-screen">
-        <h1>Welcome to Weighted Matrix Tool</h1>
+        <h1>Welcome to LiveDM</h1>
         <label for="title">Title:</label>
-        <input type="text" id="title" value="Weighted Matrix"><br><br>
+        <input type="text" id="title" value="LiveDM"><br><br>
         <label for="primary">Primary Conditions (comma-separated):</label>
         <input type="text" id="primary" value="P1, P2, P3"><br><br>
         <label for="secondary">Secondary Conditions (comma-separated):</label>
@@ -103,7 +228,7 @@
         <table id="matrix-table"></table>
         <div class="scale-container">
             <div class="scale-labels">
-                <span id="min-label">Min: -25</span>
+                <span id="min-label">Min: 0</span>
                 <span>Neutral</span>
                 <span id="max-label">Max: 25</span>
             </div>
@@ -122,7 +247,21 @@
             <button id="export-markdown">Export to Markdown</button>
             <button id="back-button">Back</button>
         </div>
-        <pre id="markdown-preview" style="white-space: pre-wrap;"></pre>
+        <div class="markdown-container">
+            <div class="markdown-header">
+                <h3>Markdown Output</h3>
+                <button id="copy-markdown" class="copy-btn">Copy Markdown</button>
+            </div>
+            <pre id="markdown-preview"></pre>
+            <div class="markdown-header">
+                <h3>Rendered Preview</h3>
+            </div>
+            <div id="rendered-preview" class="hidden"></div>
+        </div>
+        <div class="bar-chart-container hidden" id="bar-chart-container">
+            <h3 class="bar-chart-title">Combination Rankings</h3>
+            <div id="bar-chart"></div>
+        </div>
     </div>
 
     <script>
@@ -132,6 +271,16 @@
 
         // Calculate color based on value and range
         function getColor(value, min, max) {
+            // For symmetrical mode, we want to map [0, 25] to [red, green]
+            if (!isDynamicScale) {
+                // Map 0 to red, 25 to green
+                const normalized = value / 25;
+                const r = Math.round(139 * (1 - normalized));
+                const g = Math.round(100 * normalized);
+                return `rgb(${r},${g},0)`;
+            }
+
+            // For dynamic scale
             if (min === max) return 'rgb(51,51,51)'; // Neutral grey if no variation
             const normalized = (value - min) / (max - min);
             let r, g;
@@ -150,14 +299,14 @@
         // Update all product cells with values and colors
         function updateAllCells() {
             const primaryWeights = Array.from(document.querySelectorAll('.primary-weight')).map(span => parseInt(span.textContent) || 0);
-            const secondaryWeights = Array.from(document.querySelectorAll('.cell-secondary-weight')).map(cell => parseInt(cell.dataset.secondaryWeight) || 1);
+            const secondaryWeights = Array.from(document.querySelectorAll('.cell-secondary-weight')).map(cell => parseInt(cell.dataset.secondaryWeight) || 0);
             const productCells = document.querySelectorAll('.product');
             const allProducts = [];
 
             productCells.forEach((cell, index) => {
                 const row = Math.floor(index / secondaryConditions.length);
                 const col = index % secondaryConditions.length;
-                const secondaryWeight = parseInt(cell.dataset.secondaryWeight) || 1;
+                const secondaryWeight = parseInt(cell.dataset.secondaryWeight) || 0;
                 const product = primaryWeights[row] * secondaryWeight;
 
                 allProducts.push(product);
@@ -165,9 +314,9 @@
                 cell.dataset.product = product;
             });
 
-            let min = isDynamicScale ? Math.min(...allProducts) : -25;
+            let min = isDynamicScale ? Math.min(...allProducts) : 0;
             let max = isDynamicScale ? Math.max(...allProducts) : 25;
-            if (min === max) min = -25, max = 25; // Default range if no variation
+            if (min === max) min = 0, max = 25; // Default range if no variation
 
             productCells.forEach(cell => {
                 const product = parseInt(cell.dataset.product);
@@ -176,6 +325,11 @@
 
             document.getElementById('min-label').textContent = `Min: ${min}`;
             document.getElementById('max-label').textContent = `Max: ${max}`;
+
+            // Update bar chart if it's visible
+            if (!document.getElementById('bar-chart-container').classList.contains('hidden')) {
+                renderBarChart();
+            }
         }
 
         // Build the matrix table
@@ -188,9 +342,14 @@
             const weightTh = document.createElement('th');
             weightTh.textContent = 'Weight';
             tr.appendChild(weightTh);
-            secondaryConditions.forEach(s => {
+            secondaryConditions.forEach((s, j) => {
                 const th = document.createElement('th');
+                th.contentEditable = true;
                 th.textContent = s;
+                th.dataset.index = j;
+                th.addEventListener('blur', function () {
+                    secondaryConditions[this.dataset.index] = this.textContent;
+                });
                 tr.appendChild(th);
             });
             thead.appendChild(tr);
@@ -199,7 +358,12 @@
             primaryConditions.forEach((p, i) => {
                 const tr = document.createElement('tr');
                 const labelTd = document.createElement('td');
+                labelTd.contentEditable = true;
                 labelTd.textContent = p;
+                labelTd.dataset.index = i;
+                labelTd.addEventListener('blur', function () {
+                    primaryConditions[this.dataset.index] = this.textContent;
+                });
                 tr.appendChild(labelTd);
                 const weightTd = document.createElement('td');
                 const weightSpan = document.createElement('span');
@@ -212,7 +376,7 @@
                     const td = document.createElement('td');
                     const span = document.createElement('span');
                     span.className = 'product';
-                    span.dataset.secondaryWeight = '1'; // Default secondary weight
+                    span.dataset.secondaryWeight = '0'; // Default secondary weight is 0
                     span.dataset.colIndex = j;
                     span.dataset.rowIndex = i;
                     td.appendChild(span);
@@ -226,6 +390,13 @@
             const secondaryWeightsDiv = document.getElementById('secondary-weights');
             secondaryWeightsDiv.innerHTML = '';
 
+            // Make the title editable
+            const titleElement = document.getElementById('matrix-title');
+            titleElement.contentEditable = true;
+            titleElement.addEventListener('blur', function () {
+                document.title = this.textContent; // Update page title too
+            });
+
             addEventListeners();
             updateAllCells();
         }
@@ -233,12 +404,22 @@
         // Add event listeners for weight adjustments and interactions
         function addEventListeners() {
             document.querySelectorAll('.primary-weight').forEach(span => {
-                span.addEventListener('click', function () {
-                    const newWeight = prompt('Enter new weight (-10 to 10):', this.textContent);
-                    if (newWeight !== null && !isNaN(newWeight)) {
-                        this.textContent = newWeight;
-                        updateAllCells();
-                    }
+                // Left click to decrement primary weight
+                span.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    const currentWeight = parseInt(this.textContent) || 0;
+                    // Limit P-weights to the range [0, 5]
+                    this.textContent = Math.max(0, currentWeight - 1);
+                    updateAllCells();
+                });
+
+                // Right click to increment primary weight
+                span.addEventListener('contextmenu', function (e) {
+                    e.preventDefault(); // Prevent context menu
+                    const currentWeight = parseInt(this.textContent) || 0;
+                    // Limit P-weights to the range [0, 5]
+                    this.textContent = Math.min(5, currentWeight + 1);
+                    updateAllCells();
                 });
             });
 
@@ -247,16 +428,18 @@
                 // Left click to decrement secondary weight
                 cell.addEventListener('click', function (e) {
                     e.preventDefault();
-                    const currentWeight = parseInt(this.dataset.secondaryWeight) || 1;
-                    this.dataset.secondaryWeight = Math.max(-10, currentWeight - 1);
+                    const currentWeight = parseInt(this.dataset.secondaryWeight) || 0;
+                    // Limit S-weights to the range [0, 5]
+                    this.dataset.secondaryWeight = Math.max(0, currentWeight - 1);
                     updateAllCells();
                 });
 
                 // Right click to increment secondary weight
                 cell.addEventListener('contextmenu', function (e) {
-                    e.preventDefault();
-                    const currentWeight = parseInt(this.dataset.secondaryWeight) || 1;
-                    this.dataset.secondaryWeight = Math.min(10, currentWeight + 1);
+                    e.preventDefault(); // Prevent context menu
+                    const currentWeight = parseInt(this.dataset.secondaryWeight) || 0;
+                    // Limit S-weights to the range [0, 5]
+                    this.dataset.secondaryWeight = Math.min(5, currentWeight + 1);
                     updateAllCells();
                 });
 
@@ -268,7 +451,8 @@
 
                 // Mouseout to show product again
                 cell.addEventListener('mouseout', function () {
-                    this.textContent = this.dataset.originalText;
+                    // Use the current product value from dataset to fix the bug
+                    this.textContent = this.dataset.product;
                 });
             });
 
@@ -278,11 +462,10 @@
             });
 
             document.getElementById('add-row').addEventListener('click', function () {
-                const newRowName = prompt('Enter new row name:');
-                if (newRowName) {
-                    primaryConditions.push(newRowName);
-                    buildTable();
-                }
+                // Add a new row with default name
+                const newIndex = primaryConditions.length + 1;
+                primaryConditions.push(`P${newIndex}`);
+                buildTable();
             });
 
             document.getElementById('remove-row').addEventListener('click', function () {
@@ -295,11 +478,10 @@
             });
 
             document.getElementById('add-column').addEventListener('click', function () {
-                const newColName = prompt('Enter new column name:');
-                if (newColName) {
-                    secondaryConditions.push(newColName);
-                    buildTable();
-                }
+                // Add a new column with default name
+                const newIndex = secondaryConditions.length + 1;
+                secondaryConditions.push(`S${newIndex}`);
+                buildTable();
             });
 
             document.getElementById('remove-column').addEventListener('click', function () {
@@ -327,6 +509,24 @@
             document.getElementById('load-button').addEventListener('click', function () {
                 loadMatrix();
             });
+
+            // Add event listener for copy button
+            document.getElementById('copy-markdown').addEventListener('click', function () {
+                const markdown = document.getElementById('markdown-preview').textContent;
+                navigator.clipboard.writeText(markdown).then(() => {
+                    // Visual feedback for successful copy
+                    this.classList.add('copy-success');
+                    this.textContent = 'Copied!';
+
+                    setTimeout(() => {
+                        this.classList.remove('copy-success');
+                        this.textContent = 'Copy Markdown';
+                    }, 2000);
+                }).catch(err => {
+                    console.error('Failed to copy: ', err);
+                    alert('Failed to copy to clipboard');
+                });
+            });
         }
 
         // Export to Markdown
@@ -351,6 +551,118 @@
             });
 
             document.getElementById('markdown-preview').textContent = markdown;
+            renderMarkdownPreview(markdown);
+            renderBarChart();
+
+            // Make sure the bar chart is visible
+            document.getElementById('bar-chart-container').classList.remove('hidden');
+        }
+
+        // Render Markdown preview
+        function renderMarkdownPreview(markdown) {
+            const renderedPreview = document.getElementById('rendered-preview');
+
+            // Simple Markdown to HTML conversion
+            let html = markdown
+                // Convert headers
+                .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+                .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+                .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+
+                // Convert tables - this is a simplified approach
+                .replace(/\n\|(.+)\|\n\|([-|]+)\|\n/g, function (match, headers, dividers) {
+                    const headerCells = headers.split('|').map(cell => `<th>${cell.trim()}</th>`).join('');
+                    const headerRow = `<tr>${headerCells}</tr>`;
+                    return `<table><thead>${headerRow}</thead><tbody>\n`;
+                })
+                .replace(/\|(.+)\|\n/g, function (match, cells) {
+                    if (cells.includes('---')) return ''; // Skip the divider row
+                    const tableCells = cells.split('|').map(cell => `<td>${cell.trim()}</td>`).join('');
+                    return `<tr>${tableCells}</tr>\n`;
+                })
+                .replace(/<\/tbody>\n<table>/g, '</tbody></table><table>') // Fix nested tables
+                + '</tbody></table>' // Close the last table
+
+                    // Convert paragraphs
+                    .replace(/\n\n/g, '</p><p>')
+
+                    // Cleanup
+                    .replace(/<\/p><p><\/tbody><\/table>/g, '</tbody></table>') // Fix paragraph after table
+                    .replace(/<p><table>/g, '<table>') // Fix paragraph before table
+                    .replace(/<\/table><\/p>/g, '</table>'); // Fix paragraph after table
+
+            // Wrap in paragraph if needed
+            if (!html.startsWith('<')) {
+                html = '<p>' + html + '</p>';
+            }
+
+            renderedPreview.innerHTML = html;
+            renderedPreview.classList.remove('hidden');
+        }
+
+        // Render bar chart visualization
+        function renderBarChart() {
+            const barChartContainer = document.getElementById('bar-chart-container');
+            const barChart = document.getElementById('bar-chart');
+            barChart.innerHTML = '';
+
+            // Get all products and their labels
+            const productCells = document.querySelectorAll('.product');
+            const products = [];
+
+            productCells.forEach((cell, index) => {
+                const rowIndex = Math.floor(index / secondaryConditions.length);
+                const colIndex = index % secondaryConditions.length;
+                const primaryLabel = primaryConditions[rowIndex];
+                const secondaryLabel = secondaryConditions[colIndex];
+                const product = parseInt(cell.dataset.product) || 0;
+
+                products.push({
+                    label: `${primaryLabel} × ${secondaryLabel}`,
+                    value: product,
+                    rowIndex,
+                    colIndex
+                });
+            });
+
+            // Sort products by value (descending)
+            products.sort((a, b) => b.value - a.value);
+
+            // Find the maximum absolute value for scaling
+            const maxValue = Math.max(...products.map(p => p.value));
+
+            // Create bars
+            products.forEach(product => {
+                const barContainer = document.createElement('div');
+                barContainer.style.display = 'flex';
+                barContainer.style.alignItems = 'center';
+                barContainer.style.marginBottom = '8px';
+
+                const bar = document.createElement('div');
+                bar.className = 'bar';
+
+                // Calculate width percentage (0% is minimum, 100% is maximum)
+                const widthPercentage = (product.value / maxValue) * 100;
+                bar.style.width = `${widthPercentage}%`;
+
+                // Set color based on value
+                bar.style.backgroundColor = getColor(product.value, 0, maxValue);
+
+                const label = document.createElement('span');
+                label.className = 'bar-label';
+                label.textContent = product.label;
+
+                const value = document.createElement('span');
+                value.className = 'bar-value';
+                value.textContent = product.value;
+
+                bar.appendChild(label);
+                bar.appendChild(value);
+                barContainer.appendChild(bar);
+                barChart.appendChild(barContainer);
+            });
+
+            barChartContainer.classList.remove('hidden');
         }
 
         // Save matrix to localStorage
