@@ -1,194 +1,434 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+
 <head>
-  <meta charset="utf-8">
-  <title>Weighted Matrix Chart Tool</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      padding: 20px;
-      background-color: #f7f7f7;
-    }
-    .hidden {
-      display: none;
-    }
-    .welcome, .editor {
-      margin-bottom: 20px;
-      background: #fff;
-      padding: 15px;
-      border-radius: 5px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    }
-    label {
-      display: block;
-      margin-bottom: 10px;
-    }
-    input[type="text"] {
-      width: 300px;
-      padding: 5px;
-      font-size: 14px;
-    }
-    input[type="number"] {
-      width: 60px;
-      padding: 3px;
-      font-size: 14px;
-      margin-top: 5px;
-    }
-    button {
-      padding: 8px 12px;
-      font-size: 14px;
-      cursor: pointer;
-    }
-    table {
-      border-collapse: collapse;
-      margin-top: 20px;
-      width: 100%;
-    }
-    th, td {
-      border: 1px solid #ccc;
-      padding: 8px;
-      text-align: center;
-    }
-    th {
-      background-color: #eaeaea;
-    }
-    .heatmap {
-      transition: background-color 0.3s ease;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weighted Matrix Tool</title>
+    <style>
+        /* Basic CSS for layout and readability */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        .hidden {
+            display: none;
+            /* Used to toggle visibility of screens */
+        }
+
+        table {
+            border-collapse: collapse;
+            /* Clean table borders */
+            margin-bottom: 20px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ccc;
+            /* Light borders for clarity */
+            padding: 8px;
+            text-align: center;
+        }
+
+        input[type="number"] {
+            width: 50px;
+            /* Fixed width for inputs */
+        }
+
+        button {
+            margin-right: 5px;
+            /* Space between buttons */
+        }
+
+        .scale-gradient {
+            height: 20px;
+            background: linear-gradient(to right, red, white, green);
+            /* Heatmap scale */
+        }
+
+        .scale-labels {
+            display: flex;
+            justify-content: space-between;
+            /* Spread labels evenly */
+        }
+    </style>
 </head>
+
 <body>
-  <!-- Welcome Screen -->
-  <div id="welcomeScreen" class="welcome">
-    <h1>Welcome to the Weighted Matrix Chart Tool</h1>
-    <label>
-      Title:
-      <input type="text" id="chartTitle" value="Weighted Matrix">
-    </label>
-    <label>
-      Primary Conditions (comma separated):
-      <input type="text" id="primaryConditions" value="P1, P2, P3">
-    </label>
-    <label>
-      Secondary Conditions (comma separated):
-      <input type="text" id="secondaryConditions" value="S1, S2, S3, S4">
-    </label>
-    <button id="createChartBtn">Create</button>
-  </div>
+    <!-- Welcome Screen: Where users set initial parameters -->
+    <div id="welcome-screen">
+        <h1>Welcome to Weighted Matrix Tool</h1>
+        <label for="title">Title:</label>
+        <input type="text" id="title" value="Weighted Matrix"><br><br>
+        <label for="primary">Primary Conditions (comma-separated):</label>
+        <input type="text" id="primary" value="P1, P2, P3"><br><br>
+        <label for="secondary">Secondary Conditions (comma-separated):</label>
+        <input type="text" id="secondary" value="S1, S2, S3, S4"><br><br>
+        <button id="create-button">Create Matrix</button>
+    </div>
 
-  <!-- Editor Screen -->
-  <div id="editor" class="editor hidden">
-    <h1 id="matrixTitle"></h1>
-    <div id="matrixContainer"></div>
-  </div>
+    <!-- Editor Screen: Where the matrix is displayed and edited -->
+    <div id="editor-screen" class="hidden">
+        <h1 id="matrix-title"></h1>
+        <table id="matrix-table"></table>
+        <!-- Heatmap scale to show color range -->
+        <div id="heatmap-scale">
+            <div class="scale-labels">
+                <span>Negative</span>
+                <span>Neutral</span>
+                <span>Positive</span>
+            </div>
+            <div class="scale-gradient"></div>
+        </div>
+        <!-- Controls for scale mode and navigation -->
+        <div>
+            <label><input type="checkbox" id="dynamic-scale"> Dynamic Scale</label>
+        </div>
+        <div>
+            <button id="add-row">Add Row</button>
+            <button id="remove-row">Remove Row</button>
+            <button id="add-column">Add Column</button>
+            <button id="remove-column">Remove Column</button>
+            <button id="export-markdown">Export to Markdown</button>
+            <button id="back-button">Back</button>
+        </div>
+        <!-- Display area for exported Markdown -->
+        <pre id="markdown-preview" style="white-space: pre-wrap;"></pre>
+    </div>
 
-  <script>
-    // When the "Create" button is clicked...
-    document.getElementById("createChartBtn").addEventListener("click", function(){
-      // Read user inputs
-      const title = document.getElementById("chartTitle").value;
-      const primaryStr = document.getElementById("primaryConditions").value;
-      const secondaryStr = document.getElementById("secondaryConditions").value;
-      const primaries = primaryStr.split(",").map(s => s.trim()).filter(s => s);
-      const secondaries = secondaryStr.split(",").map(s => s.trim()).filter(s => s);
+    <script>
+        // Global variable to toggle between fixed and dynamic color scaling
+        let isDynamicScale = false;
 
-      // Set the editor title
-      document.getElementById("matrixTitle").innerText = title;
+        // Function to calculate color based on weighted value
+        // - Uses a fixed range (-100 to 100) or dynamic range based on data
+        // - Red for negative, white for neutral (0), green for positive
+        function getColor(value, min, max) {
+            // If min equals max, return white (no variation)
+            if (min === max) return 'rgb(255,255,255)';
+            // Normalize value to a 0-1 scale
+            const normalized = (value - min) / (max - min);
+            let r, g, b;
+            if (normalized < 0.5) {
+                // Red to white gradient (negative to neutral)
+                const factor = normalized * 2; // 0 to 1
+                r = 255;
+                g = b = Math.round(255 * factor); // 0 to 255
+            } else {
+                // White to green gradient (neutral to positive)
+                const factor = (normalized - 0.5) * 2; // 0 to 1
+                g = 255;
+                r = b = Math.round(255 * (1 - factor)); // 255 to 0
+            }
+            return `rgb(${r},${g},${b})`;
+        }
 
-      // Create the table
-      const table = document.createElement("table");
-      // Header row with secondary condition names
-      const headerRow = document.createElement("tr");
-      const emptyHeader = document.createElement("th");
-      emptyHeader.innerText = "";
-      headerRow.appendChild(emptyHeader);
-      secondaries.forEach(sec => {
-        const th = document.createElement("th");
-        th.innerText = sec;
-        headerRow.appendChild(th);
-      });
-      table.appendChild(headerRow);
+        // Function to get all weighted values in the matrix for dynamic scaling
+        function getAllWeightedValues() {
+            const values = [];
+            document.querySelectorAll('.value-cell').forEach(cell => {
+                const input = cell.querySelector('.value');
+                const row = cell.parentElement;
+                const weightInput = row.querySelector('.weight');
+                const weight = parseFloat(weightInput.value) || 0;
+                const value = parseFloat(input.value) || 0;
+                values.push(weight * value);
+            });
+            return values;
+        }
 
-      // Create rows for each primary condition
-      primaries.forEach((primary, rowIndex) => {
-        const tr = document.createElement("tr");
+        // Function to update a cell's background color based on its weighted value
+        function updateCellColor(cell) {
+            const input = cell.querySelector('.value');
+            const row = cell.parentElement;
+            const weightInput = row.querySelector('.weight');
+            const weight = parseFloat(weightInput.value) || 0;
+            const value = parseFloat(input.value) || 0;
+            const weightedValue = weight * value; // Core calculation
+            let min, max;
+            if (isDynamicScale) {
+                // Dynamic mode: use actual min/max from data
+                const allWeightedValues = getAllWeightedValues();
+                min = Math.min(...allWeightedValues);
+                max = Math.max(...allWeightedValues);
+            } else {
+                // Fixed mode: use predefined range
+                min = -100; // Max negative: weight 10 * value -10
+                max = 100;  // Max positive: weight 10 * value 10
+            }
+            cell.style.backgroundColor = getColor(weightedValue, min, max);
+        }
 
-        // First cell: primary name and weight input
-        const tdPrimary = document.createElement("td");
-        const nameDiv = document.createElement("div");
-        nameDiv.innerText = primary;
-        const weightInput = document.createElement("input");
-        weightInput.type = "number";
-        weightInput.value = 1;
-        weightInput.min = -100;
-        weightInput.max = 100;
-        weightInput.step = 1;
-        weightInput.classList.add("weightInput");
-        // Update the row whenever the weight changes
-        weightInput.addEventListener("input", updateAllCells);
-        tdPrimary.appendChild(nameDiv);
-        tdPrimary.appendChild(weightInput);
-        tr.appendChild(tdPrimary);
+        // Function to build the matrix table based on primary and secondary conditions
+        function buildTable(primary, secondary) {
+            const table = document.getElementById('matrix-table');
+            table.innerHTML = ''; // Clear any existing content
 
-        // Create a cell for each secondary condition
-        secondaries.forEach((sec, colIndex) => {
-          const td = document.createElement("td");
-          const ratingInput = document.createElement("input");
-          ratingInput.type = "number";
-          ratingInput.value = 0;
-          ratingInput.classList.add("ratingInput", "heatmap");
-          // Associate the rating with its row (for weight lookup)
-          ratingInput.dataset.rowIndex = rowIndex;
-          // Update the computed value when changed
-          ratingInput.addEventListener("input", updateAllCells);
-          td.appendChild(ratingInput);
-          tr.appendChild(td);
+            // Create header row
+            const thead = document.createElement('thead');
+            const tr = document.createElement('tr');
+            tr.appendChild(document.createElement('th')); // Empty cell
+            const weightTh = document.createElement('th');
+            weightTh.textContent = 'Weight';
+            tr.appendChild(weightTh);
+            secondary.forEach(s => {
+                const th = document.createElement('th');
+                th.textContent = s;
+                tr.appendChild(th);
+            });
+            thead.appendChild(tr);
+            table.appendChild(thead);
+
+            // Create body rows
+            const tbody = document.createElement('tbody');
+            primary.forEach(p => {
+                const tr = document.createElement('tr');
+                // Primary condition label
+                const labelTd = document.createElement('td');
+                labelTd.textContent = p;
+                tr.appendChild(labelTd);
+                // Weight cell with buttons
+                const weightTd = document.createElement('td');
+                const decrement = document.createElement('button');
+                decrement.textContent = '-';
+                decrement.className = 'decrement';
+                const weightInput = document.createElement('input');
+                weightInput.type = 'number';
+                weightInput.className = 'weight';
+                weightInput.value = '1';
+                weightInput.min = '0';
+                weightInput.max = '10';
+                weightInput.step = '1';
+                const increment = document.createElement('button');
+                increment.textContent = '+';
+                increment.className = 'increment';
+                weightTd.appendChild(decrement);
+                weightTd.appendChild(weightInput);
+                weightTd.appendChild(increment);
+                tr.appendChild(weightTd);
+                // Value cells for each secondary condition
+                secondary.forEach(() => {
+                    const td = document.createElement('td');
+                    td.className = 'value-cell';
+                    const input = document.createElement('input');
+                    input.type = 'number';
+                    input.className = 'value';
+                    input.value = '0';
+                    input.min = '-10';
+                    input.max = '10';
+                    input.step = '1';
+                    td.appendChild(input);
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+
+            // Add event listeners after table is built
+            addEventListeners();
+        }
+
+        // Function to attach event listeners to all interactive elements
+        function addEventListeners() {
+            // Weight input changes affect the entire row
+            document.querySelectorAll('.weight').forEach(input => {
+                input.addEventListener('input', () => {
+                    const row = input.closest('tr');
+                    const valueCells = row.querySelectorAll('.value-cell');
+                    valueCells.forEach(cell => updateCellColor(cell));
+                });
+            });
+            // Value input changes affect only that cell
+            document.querySelectorAll('.value').forEach(input => {
+                input.addEventListener('input', () => {
+                    const cell = input.parentElement;
+                    updateCellColor(cell);
+                });
+            });
+            // Decrement button reduces weight
+            document.querySelectorAll('.decrement').forEach(button => {
+                button.addEventListener('click', () => {
+                    const input = button.nextElementSibling;
+                    let value = parseFloat(input.value) || 0;
+                    value = Math.max(0, value - 1);
+                    input.value = value;
+                    input.dispatchEvent(new Event('input')); // Trigger update
+                });
+            });
+            // Increment button increases weight
+            document.querySelectorAll('.increment').forEach(button => {
+                button.addEventListener('click', () => {
+                    const input = button.previousElementSibling;
+                    let value = parseFloat(input.value) || 0;
+                    value = Math.min(10, value + 1);
+                    input.value = value;
+                    input.dispatchEvent(new Event('input')); // Trigger update
+                });
+            });
+            // Dynamic scale toggle updates all cells
+            document.getElementById('dynamic-scale').addEventListener('change', function () {
+                isDynamicScale = this.checked;
+                document.querySelectorAll('.value-cell').forEach(cell => updateCellColor(cell));
+            });
+        }
+
+        // Create button event: Build matrix and switch screens
+        document.getElementById('create-button').addEventListener('click', () => {
+            const title = document.getElementById('title').value;
+            const primary = document.getElementById('primary').value.split(',').map(s => s.trim());
+            const secondary = document.getElementById('secondary').value.split(',').map(s => s.trim());
+            document.getElementById('matrix-title').textContent = title;
+            buildTable(primary, secondary);
+            document.getElementById('welcome-screen').style.display = 'none';
+            document.getElementById('editor-screen').style.display = 'block';
         });
 
-        table.appendChild(tr);
-      });
+        // Back button event: Return to welcome screen
+        document.getElementById('back-button').addEventListener('click', () => {
+            document.getElementById('editor-screen').style.display = 'none';
+            document.getElementById('welcome-screen').style.display = 'block';
+        });
 
-      // Insert the table into the editor
-      const container = document.getElementById("matrixContainer");
-      container.innerHTML = "";
-      container.appendChild(table);
+        // Add row event: Append a new row with auto-generated label
+        document.getElementById('add-row').addEventListener('click', () => {
+            const table = document.getElementById('matrix-table');
+            const tbody = table.querySelector('tbody');
+            const numRows = tbody.querySelectorAll('tr').length;
+            const newLabel = `P${numRows + 1}`;
+            const secondaryCount = table.querySelectorAll('thead th').length - 2;
+            const tr = document.createElement('tr');
+            const labelTd = document.createElement('td');
+            labelTd.textContent = newLabel;
+            tr.appendChild(labelTd);
+            const weightTd = document.createElement('td');
+            const decrement = document.createElement('button');
+            decrement.textContent = '-';
+            decrement.className = 'decrement';
+            const weightInput = document.createElement('input');
+            weightInput.type = 'number';
+            weightInput.className = 'weight';
+            weightInput.value = '1';
+            weightInput.min = '0';
+            weightInput.max = '10';
+            weightInput.step = '1';
+            const increment = document.createElement('button');
+            increment.textContent = '+';
+            increment.className = 'increment';
+            weightTd.appendChild(decrement);
+            weightTd.appendChild(weightInput);
+            weightTd.appendChild(increment);
+            tr.appendChild(weightTd);
+            for (let i = 0; i < secondaryCount; i++) {
+                const td = document.createElement('td');
+                td.className = 'value-cell';
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.className = 'value';
+                input.value = '0';
+                input.min = '-10';
+                input.max = '10';
+                input.step = '1';
+                td.appendChild(input);
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+            // Add event listeners to new elements
+            weightInput.addEventListener('input', () => {
+                const row = weightInput.closest('tr');
+                const valueCells = row.querySelectorAll('.value-cell');
+                valueCells.forEach(cell => updateCellColor(cell));
+            });
+            tr.querySelectorAll('.value').forEach(input => {
+                input.addEventListener('input', () => {
+                    const cell = input.parentElement;
+                    updateCellColor(cell);
+                });
+            });
+            decrement.addEventListener('click', () => {
+                let value = parseFloat(weightInput.value) || 0;
+                value = Math.max(0, value - 1);
+                weightInput.value = value;
+                weightInput.dispatchEvent(new Event('input'));
+            });
+            increment.addEventListener('click', () => {
+                let value = parseFloat(weightInput.value) || 0;
+                value = Math.min(10, value + 1);
+                weightInput.value = value;
+                weightInput.dispatchEvent(new Event('input'));
+            });
+        });
 
-      // Show the editor and hide the welcome screen
-      document.getElementById("welcomeScreen").classList.add("hidden");
-      document.getElementById("editor").classList.remove("hidden");
+        // Remove row event: Delete the last row if more than one exists
+        document.getElementById('remove-row').addEventListener('click', () => {
+            const tbody = document.getElementById('matrix-table').querySelector('tbody');
+            if (tbody.rows.length > 1) {
+                tbody.deleteRow(-1);
+            }
+        });
 
-      // Do an initial update of cell heatmapping
-      updateAllCells();
-    });
+        // Add column event: Append a new column with auto-generated header
+        document.getElementById('add-column').addEventListener('click', () => {
+            const table = document.getElementById('matrix-table');
+            const thead = table.querySelector('thead tr');
+            const numColumns = thead.querySelectorAll('th').length - 2;
+            const newHeader = `S${numColumns + 1}`;
+            const th = document.createElement('th');
+            th.textContent = newHeader;
+            thead.appendChild(th);
+            const tbody = table.querySelector('tbody');
+            tbody.querySelectorAll('tr').forEach(tr => {
+                const td = document.createElement('td');
+                td.className = 'value-cell';
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.className = 'value';
+                input.value = '0';
+                input.min = '-10';
+                input.max = '10';
+                input.step = '1';
+                td.appendChild(input);
+                tr.appendChild(td);
+                input.addEventListener('input', () => {
+                    updateCellColor(td);
+                });
+            });
+        });
 
-    // Update all matrix cells based on current weights and ratings
-    function updateAllCells() {
-      const table = document.querySelector("#matrixContainer table");
-      if (!table) return;
-      // Loop over each row (skipping header row)
-      const rows = table.querySelectorAll("tr");
-      rows.forEach((row, rowIndex) => {
-        if (rowIndex === 0) return; // skip header
-        const weightInput = row.cells[0].querySelector("input.weightInput");
-        const weight = parseFloat(weightInput.value) || 0;
-        // Process each cell (skip first cell which is the label/weight)
-        for (let i = 1; i < row.cells.length; i++) {
-          const ratingInput = row.cells[i].querySelector("input.ratingInput");
-          const rating = parseFloat(ratingInput.value) || 0;
-          const product = weight * rating;
-          // Set a tooltip showing the computed value
-          ratingInput.title = "Computed: " + product;
-          // Apply heatmapping: green for positive, red for negative, white for zero.
-          if (product > 0) {
-            ratingInput.style.backgroundColor = "#b6fcb6"; // light green
-          } else if (product < 0) {
-            ratingInput.style.backgroundColor = "#fcb6b6"; // light red
-          } else {
-            ratingInput.style.backgroundColor = "#ffffff"; // white
-          }
-        }
-      });
-    }
-  </script>
+        // Remove column event: Delete the last column if more than one exists
+        document.getElementById('remove-column').addEventListener('click', () => {
+            const table = document.getElementById('matrix-table');
+            const thead = table.querySelector('thead tr');
+            if (thead.cells.length > 2) {
+                thead.deleteCell(-1);
+                const tbody = table.querySelector('tbody');
+                tbody.querySelectorAll('tr').forEach(tr => {
+                    tr.deleteCell(-1);
+                });
+            }
+        });
+
+        // Export to Markdown event: Generate and display Markdown table
+        document.getElementById('export-markdown').addEventListener('click', () => {
+            const title = document.getElementById('matrix-title').textContent;
+            const table = document.getElementById('matrix-table');
+            const thead = table.querySelector('thead tr');
+            const headers = Array.from(thead.querySelectorAll('th')).slice(1).map(th => th.textContent);
+            const rows = Array.from(table.querySelectorAll('tbody tr')).map(tr => {
+                const label = tr.querySelector('td:first-child').textContent;
+                const weight = tr.querySelector('.weight').value;
+                const values = Array.from(tr.querySelectorAll('.value')).map(input => input.value);
+                return { label, weight, values };
+            });
+            let markdown = `# ${title}\n\n`;
+            markdown += '| Criteria | Weight | ' + headers.join(' | ') + ' |\n';
+            markdown += '| --- | --- | ' + headers.map(() => '---').join(' | ') + ' |\n';
+            rows.forEach(row => {
+                markdown += '| ' + row.label + ' | ' + row.weight + ' | ' + row.values.join(' | ') + ' |\n';
+            });
+            document.getElementById('markdown-preview').textContent = markdown;
+        });
+    </script>
 </body>
+
 </html>
